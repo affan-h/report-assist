@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+requires-python = ">=3.10"
+name = "fyp"
+# dynamic = ["dependencies", "optional-dependencies"]
+dependencies = ["langgraph","langchain-openai","pandas"]
+
+[project.optional-dependencies]
+dev = ["ipykernel"]
+# [tool.setuptools.dynamic]
+# dependencies = { file = ["requirements.in"] }
+# optional-dependencies.test = { file = ["requirements-test.txt"] }

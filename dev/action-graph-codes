@@ -1,0 +1,127 @@
+--- Task 1 ---
+Instruction: Load the raw CSV(s) from /data using agent_state['raw_data_path']. Generate only a small ActionGraph (at most 3 nodes) that: (a) reads the file, (b) infers basic schema & missing counts, (c) writes a temporary loaded file (/data/loaded_tmp.csv). Produce a minimal summary (rows, cols, missing per column).
+# Action 1: Read the first raw CSV path from agent_state['raw_data_path'], load into a DataFrame and write a temporary file at /data/loaded_tmp.csv. Include pandas import to avoid NameError.
+import pandas as pd
+
+# get the first path from agent_state
+raw_paths = agent_state.get('raw_data_path', [])
+if not raw_paths:
+    raise ValueError("No raw_data_path found in agent_state")
+path = raw_paths[0]
+
+# read CSV into df
+df = pd.read_csv(path)
+
+# write temporary loaded file
+df.to_csv('/data/loaded_tmp.csv', index=False)
+
+# quick confirmation
+print(f"Loaded {df.shape[0]} rows and {df.shape[1]} columns to /data/loaded_tmp.csv")
+
+# Action 2: Infer a minimal schema and missing counts, produce a small summary (rows, cols, missing per column), perform a minimal cleaning (strip column names), store cleaned DataFrame as variable 'cleaned' and save to /data/cleaned.csv.
+import pandas as pd
+
+# Ensure df is available (reload from temp if running nodes separately)
+try:
+    df
+except NameError:
+    df = pd.read_csv('/data/loaded_tmp.csv')
+
+# basic summary
+rows, cols = df.shape
+missing = df.isnull().sum()
+schema = {col: str(df[col].dtype) for col in df.columns}
+summary = {'rows': rows, 'cols': cols, 'missing_per_column': missing.to_dict()}
+
+# minimal cleaning: strip whitespace from column names and keep data unchanged
+cleaned = df.copy()
+cleaned.columns = cleaned.columns.str.strip()
+
+# save cleaned data and expose variable 'cleaned'
+cleaned.to_csv('/data/cleaned.csv', index=False)
+
+# print the minimal summary
+print(summary)
+
+--- Task 2 ---
+Instruction: Clean the loaded data and save the final cleaned dataset with name 'cleaned' at /data/cleaned.csv. Generate only a small ActionGraph (at most 3 nodes) that: (a) handles missing values (fill or drop), (b) removes duplicates and enforces column types, (c) writes /data/cleaned.csv. Update agent_state agent_messages with a progress update including cleaned_path and a short schema/summary.
+# Action 1: Handle missing values, try basic type conversions, and remove duplicates. Produce a cleaned DataFrame named 'cleaned'.
+cleaned = df.copy()
+# drop rows where all values are missing
+cleaned.dropna(axis=0, how='all', inplace=True)
+
+# Fill numeric columns with median
+for col in cleaned.select_dtypes(include=['number']).columns:
+    med = cleaned[col].median()
+    cleaned[col].fillna(med, inplace=True)
+
+# Fill object/category columns with mode (or empty string if no mode)
+for col in cleaned.select_dtypes(include=['object', 'category']).columns:
+    if cleaned[col].isnull().any():
+        mode = cleaned[col].mode(dropna=True)
+        if len(mode):
+            cleaned[col].fillna(mode[0], inplace=True)
+        else:
+            cleaned[col].fillna('', inplace=True)
+
+# Attempt to convert object columns to datetime or numeric when a majority convert
+for col in cleaned.select_dtypes(include=['object']).columns:
+    dt = pd.to_datetime(cleaned[col], errors='coerce')
+    if dt.notna().sum() >= len(cleaned) * 0.5:
+        cleaned[col] = dt
+        continue
+    num = pd.to_numeric(cleaned[col], errors='coerce')
+    if num.notna().sum() >= len(cleaned) * 0.5:
+        cleaned[col] = num
+
+# Drop exact duplicate rows
+cleaned.drop_duplicates(inplace=True)
+
+# Convert numeric columns to nullable integer when all present values are integer-like
+for col in cleaned.select_dtypes(include=['number']).columns:
+    ser = cleaned[col].dropna()
+    if len(ser) > 0 and ((ser % 1) == 0).all():
+        cleaned[col] = cleaned[col].astype('Int64')
+
+# Action 2: Save the cleaned DataFrame to a writable location (fall back if /data is read-only) and update agent_state['agent_messages'] with cleaned_path plus a short schema and summary.
+import os
+
+# Try several paths; /data may be read-only so fall back to cwd or /tmp
+out_paths = ['/data/cleaned.csv', './cleaned.csv', '/tmp/cleaned.csv']
+saved_path = None
+last_err = None
+for p in out_paths:
+    try:
+        d = os.path.dirname(p)
+        if d and not os.path.exists(d):
+            os.makedirs(d, exist_ok=True)
+        cleaned.to_csv(p, index=False)
+        saved_path = p
+        break
+    except Exception as e:
+        last_err = e
+
+if saved_path is None:
+    # propagate a clear error if nothing worked
+    raise last_err or RuntimeError('Failed to save cleaned dataset to any candidate path')
+
+# Update agent_state with progress, include cleaned_path and a compact schema/summary
+agent_state = globals().get('agent_state', {})
+if not isinstance(agent_state, dict):
+    agent_state = {}
+
+schema = {col: str(dtype) for col, dtype in cleaned.dtypes.items()}
+summary = {'rows': len(cleaned), 'columns': len(cleaned.columns)}
+message = {
+    'status': 'cleaned',
+    'cleaned_path': saved_path,
+    'schema': schema,
+    'summary': summary
+}
+agent_state.setdefault('agent_messages', []).append(message)
+# write back into globals so downstream code can access updated agent_state
+globals()['agent_state'] = agent_state
+
+# Optionally print/save the chosen path for interactive runs
+print('cleaned dataset saved to:', saved_path)
+

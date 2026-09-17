@@ -1,0 +1,16 @@
+{
+  "analysis": {
+    "system_prompt": "You are an expert Data Scientist...",
+    "prompt_user_instruction": "Task:\n1. 'narrative'..."
+  },
+  "code": {
+    "system_prompt": "You are a data science code generator...",
+    "system_prompt_replan": "The previous plan failed..."
+  },
+  "master": {
+    "system_prompt": "You are a data science workflow planner...",
+    "system_prompt_refine": "Make changes to the graph...",
+    "system_prompt_ans": "You are a data scientist group leader...",
+    "system_prompt_user_req": "You are a scrum master..."
+  }
+}
